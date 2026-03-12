@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>EFD Date Checker</title>
-<meta name="description" content="Validação e correção de datas em lote para arquivos EFD ICMS/IPI!">
+<meta name="description" content="Validação e correção de datas em lote para arquivos EFD ICMS/IPI">
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
 :root {
@@ -217,7 +217,7 @@ function parseDateToComparable(dt) {
 }
 
 function getStatus(dtDoc, dtES) {
-  if (!dtDoc || !dtES) return 'error';
+  if (!dtDoc || !dtES) return 'ok';
   const emissao = parseDateToComparable(dtDoc);
   const entradaSaida = parseDateToComparable(dtES);
   if (entradaSaida < emissao) return 'error';
@@ -237,6 +237,7 @@ function parseEfdFile(name, content) {
     if (fields[0] === 'C100') {
       const dtDoc = fields[9] || '';
       const dtES = fields[10] || '';
+      if (!dtDoc || !dtES) continue;
       records.push({ lineIndex: i, rawLine: line, registro: 'C100', numDoc: fields[7]||'', chvNfe: fields[8]||'', dtDoc, dtES, codPart: fields[3]||'', status: getStatus(dtDoc, dtES) });
     }
   }
