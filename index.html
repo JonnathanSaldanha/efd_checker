@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EFD Date Checker</title>
+<meta name="description" content="Validação e correção de datas em lote para arquivos EFD ICMS/IPI">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: hsl(220,20%,97%);
+  --fg: hsl(220,25%,10%);
+  --card: hsl(0,0%,100%);
+  --card-fg: hsl(220,25%,10%);
+  --primary: hsl(220,70%,45%);
+  --primary-fg: hsl(0,0%,100%);
+  --muted: hsl(220,15%,94%);
+  --muted-fg: hsl(220,10%,45%);
+  --border: hsl(220,15%,88%);
+  --success: hsl(142,72%,35%);
+  --destructive: hsl(0,72%,51%);
+  --radius: 0.625rem;
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Inter', system-ui, sans-serif; background: var(--bg); color: var(--fg); }
+.mono { font-family: 'JetBrains Mono', monospace; }
+.container { max-width: 1152px; margin: 0 auto; padding: 0 1rem; }
+
+/* Header */
+header { border-bottom: 1px solid var(--border); background: var(--card); }
+.header-inner { display: flex; align-items: center; justify-content: space-between; padding: 1rem 0; }
+.header-left { display: flex; align-items: center; gap: 0.75rem; }
+.header-icon { background: var(--primary); color: var(--primary-fg); padding: 0.5rem; border-radius: 0.5rem; display: flex; }
+.header-icon svg { width: 20px; height: 20px; }
+.header-title { font-size: 1.25rem; font-weight: 700; }
+.header-sub { font-size: 0.75rem; color: var(--muted-fg); }
+.btn-clear { font-size: 0.875rem; color: var(--muted-fg); background: none; border: none; cursor: pointer; }
+.btn-clear:hover { color: var(--fg); }
+
+/* Dropzone */
+.dropzone { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1rem; border: 2px dashed hsla(220,70%,45%,0.3); background: hsla(220,70%,45%,0.05); border-radius: var(--radius); padding: 3rem; cursor: pointer; transition: all 0.2s; }
+.dropzone:hover { border-color: hsla(220,70%,45%,0.6); background: hsla(220,70%,45%,0.1); }
+.dropzone-icon { background: hsla(220,70%,45%,0.1); border-radius: 50%; padding: 1rem; }
+.dropzone-icon svg { width: 32px; height: 32px; color: var(--primary); }
+.dropzone-text { text-align: center; }
+.dropzone-text p:first-child { font-size: 1.125rem; font-weight: 600; }
+.dropzone-text p:last-child { font-size: 0.875rem; color: var(--muted-fg); margin-top: 0.25rem; }
+.dropzone input { display: none; }
+
+/* Steps */
+.steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; margin-top: 1.5rem; }
+.step { border: 1px solid var(--border); background: var(--card); border-radius: var(--radius); padding: 0.75rem; text-align: center; }
+.step-title { font-weight: 600; font-size: 0.875rem; }
+.step-desc { font-size: 0.75rem; color: var(--muted-fg); }
+
+/* Buttons */
+.btn { display: inline-flex; align-items: center; gap: 0.25rem; padding: 0.375rem 0.75rem; border-radius: var(--radius); font-size: 0.875rem; font-weight: 500; cursor: pointer; border: 1px solid var(--border); background: var(--card); color: var(--fg); transition: all 0.15s; }
+.btn:hover { background: var(--muted); }
+.btn-primary { background: var(--primary); color: var(--primary-fg); border-color: var(--primary); }
+.btn-primary:hover { opacity: 0.9; }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn svg { width: 16px; height: 16px; }
+
+/* Stats */
+.stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; }
+.stat { border: 1px solid var(--border); background: var(--card); border-radius: var(--radius); padding: 1rem; text-align: center; }
+.stat-value { font-size: 1.5rem; font-weight: 700; font-family: 'JetBrains Mono', monospace; }
+.stat-label { font-size: 0.875rem; color: var(--muted-fg); }
+.stat-ok { background: hsla(142,72%,35%,0.1); color: var(--success); border-color: hsla(142,72%,35%,0.3); }
+.stat-ok .stat-value { color: var(--success); }
+.stat-error { background: hsla(0,72%,51%,0.1); color: var(--destructive); border-color: hsla(0,72%,51%,0.3); }
+.stat-error .stat-value { color: var(--destructive); }
+
+/* Actions bar */
+.actions { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.75rem; }
+.actions-left { display: flex; align-items: center; gap: 0.5rem; }
+.actions-right { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+.filter-group { display: flex; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+.filter-btn { padding: 0.375rem 1rem; font-size: 0.875rem; font-weight: 500; border: none; cursor: pointer; background: var(--card); color: var(--muted-fg); transition: all 0.15s; }
+.filter-btn:hover { background: var(--muted); }
+.filter-btn.active { background: var(--primary); color: var(--primary-fg); }
+.sel-count { font-size: 0.875rem; color: var(--muted-fg); }
+
+/* Table */
+.file-block { border: 1px solid var(--border); background: var(--card); border-radius: var(--radius); overflow: hidden; }
+.file-header { display: flex; align-items: center; justify-content: space-between; padding: 0.75rem 1rem; border-bottom: 1px solid var(--border); background: hsla(220,15%,94%,0.5); }
+.file-name { font-weight: 600; }
+.file-periodo { font-size: 0.75rem; color: var(--muted-fg); }
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
+thead tr { border-bottom: 1px solid var(--border); background: hsla(220,15%,94%,0.3); }
+th { padding: 0.5rem 1rem; text-align: left; font-weight: 500; color: var(--muted-fg); }
+th:first-child, td:first-child { padding-left: 0.75rem; width: 2.5rem; }
+td { padding: 0.5rem 1rem; border-bottom: 1px solid var(--border); }
+tr:last-child td { border-bottom: none; }
+tr:hover { background: hsla(220,15%,94%,0.2); }
+tr.selected { background: hsla(220,70%,45%,0.05); }
+
+/* Status badges */
+.badge { display: inline-flex; align-items: center; gap: 0.25rem; padding: 0.125rem 0.5rem; border-radius: 9999px; font-size: 0.75rem; font-weight: 500; border: 1px solid; }
+.badge-ok { background: hsla(142,72%,35%,0.1); color: var(--success); border-color: hsla(142,72%,35%,0.3); }
+.badge-error { background: hsla(0,72%,51%,0.1); color: var(--destructive); border-color: hsla(0,72%,51%,0.3); }
+.badge svg { width: 12px; height: 12px; }
+
+/* Editable cell */
+.editable { font-family: 'JetBrains Mono', monospace; font-size: 0.75rem; background: none; border: none; cursor: pointer; padding: 0.125rem 0.5rem; border-radius: 0.25rem; transition: background 0.15s; }
+.editable:hover { background: hsla(220,70%,45%,0.1); }
+.edit-input { font-family: 'JetBrains Mono', monospace; font-size: 0.75rem; width: 7rem; height: 1.75rem; padding: 0 0.5rem; border: 1px solid var(--border); border-radius: 0.25rem; outline: none; }
+.edit-input:focus { border-color: var(--primary); box-shadow: 0 0 0 2px hsla(220,70%,45%,0.2); }
+
+/* Pagination */
+.pagination { display: flex; align-items: center; justify-content: space-between; padding: 0.75rem 1rem; border-top: 1px solid var(--border); background: hsla(220,15%,94%,0.3); }
+.pagination-info { font-size: 0.75rem; color: var(--muted-fg); }
+.pagination-btns { display: flex; align-items: center; gap: 0.25rem; }
+.page-btn { width: 2rem; height: 2rem; display: flex; align-items: center; justify-content: center; border: 1px solid var(--border); border-radius: var(--radius); background: var(--card); cursor: pointer; font-size: 0.875rem; }
+.page-btn:hover { background: var(--muted); }
+.page-btn.active { background: var(--primary); color: var(--primary-fg); border-color: var(--primary); }
+.page-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* Checkbox */
+.chk { width: 1rem; height: 1rem; accent-color: var(--primary); cursor: pointer; }
+
+/* Modal */
+.modal-overlay { position: fixed; inset: 0; z-index: 50; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.2); backdrop-filter: blur(4px); }
+.modal { background: var(--card); border: 1px solid var(--border); border-radius: 0.75rem; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25); width: 100%; max-width: 32rem; margin: 1rem; animation: fadeIn 0.2s; }
+@keyframes fadeIn { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
+.modal-header { display: flex; align-items: center; justify-content: space-between; padding: 1rem 1.5rem; border-bottom: 1px solid var(--border); }
+.modal-header h2 { font-size: 1.125rem; font-weight: 700; }
+.modal-close { background: none; border: none; cursor: pointer; color: var(--muted-fg); padding: 0.25rem; }
+.modal-close:hover { color: var(--fg); }
+.modal-body { padding: 1.5rem; }
+.modal-footer { display: flex; justify-content: flex-end; gap: 0.5rem; padding: 1rem 1.5rem; border-top: 1px solid var(--border); }
+.radio-option { display: flex; align-items: flex-start; gap: 0.75rem; padding: 0.75rem; border: 1px solid var(--border); border-radius: var(--radius); cursor: pointer; transition: all 0.15s; margin-bottom: 0.5rem; }
+.radio-option:hover { border-color: hsla(220,10%,45%,0.3); }
+.radio-option.active { border-color: var(--primary); background: hsla(220,70%,45%,0.05); }
+.radio-option input { margin-top: 2px; accent-color: var(--primary); }
+.radio-label { font-size: 0.875rem; font-weight: 500; }
+.radio-desc { font-size: 0.75rem; color: var(--muted-fg); }
+.custom-date-input { margin-top: 1rem; }
+.custom-date-input label { font-size: 0.875rem; font-weight: 500; display: block; margin-bottom: 0.25rem; }
+.custom-date-input input { width: 100%; padding: 0.5rem; border: 1px solid var(--border); border-radius: var(--radius); font-family: 'JetBrains Mono', monospace; }
+
+.space-y > * + * { margin-top: 1.5rem; }
+main { padding: 2rem 0; }
+.intro { max-width: 36rem; margin: 0 auto; text-align: center; }
+.intro h2 { font-size: 1.5rem; font-weight: 700; }
+.intro p { color: var(--muted-fg); margin-top: 0.5rem; }
+.truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 200px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="container">
+    <div class="header-inner">
+      <div class="header-left">
+        <div class="header-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></svg>
+        </div>
+        <div>
+          <div class="header-title">EFD Date Checker</div>
+          <div class="header-sub">Validação e correção de datas em lote</div>
+        </div>
+      </div>
+      <button class="btn-clear" id="btnClear" style="display:none" onclick="clearAll()">Limpar tudo</button>
+    </div>
+  </div>
+</header>
+
+<main>
+  <div class="container">
+    <div id="app" class="space-y"></div>
+  </div>
+</main>
+
+<!-- Modal -->
+<div class="modal-overlay" id="modalOverlay" style="display:none">
+  <div class="modal">
+    <div class="modal-header">
+      <h2>Edição em Lote</h2>
+      <button class="modal-close" onclick="closeModal()"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
+    </div>
+    <div class="modal-body">
+      <p style="font-size:0.875rem;color:var(--muted-fg);margin-bottom:1rem">A edição será aplicada aos registros selecionados ou a todos com status <strong style="color:var(--destructive)">Erro</strong>.</p>
+      <div id="modalOptions"></div>
+      <div class="custom-date-input" id="customDateWrap" style="display:none">
+        <label>Data (dd/mm/aaaa)</label>
+        <input type="text" id="customDateInput" placeholder="01/02/2026" class="mono">
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" id="btnApplyBatch" onclick="applyBatch()">Aplicar</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ============= STATE =============
+let files = [];
+let filter = 'all';
+let editingCell = null;
+let selected = new Set();
+let currentPages = {};
+let batchMode = 'set-es-to-doc';
+const PAGE_SIZE = 50;
+
+// ============= PARSER =============
+function formatDateDisplay(dt) {
+  if (!dt || dt.length !== 8) return dt || '';
+  return dt.slice(0,2)+'/'+dt.slice(2,4)+'/'+dt.slice(4);
+}
+
+function parseDateToComparable(dt) {
+  if (!dt || dt.length !== 8) return 0;
+  return parseInt(dt.slice(4,8) + dt.slice(2,4) + dt.slice(0,2));
+}
+
+function getStatus(dtDoc, dtES) {
+  if (!dtDoc || !dtES) return 'error';
+  const emissao = parseDateToComparable(dtDoc);
+  const entradaSaida = parseDateToComparable(dtES);
+  if (entradaSaida < emissao) return 'error';
+  return 'ok';
+}
+
+function parseEfdFile(name, content) {
+  const lines = content.split(/\r?\n/);
+  const records = [];
+  let periodo = '';
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const fields = line.split('|').filter((_, idx) => idx > 0);
+    if (fields[0] === '0000') {
+      periodo = formatDateDisplay(fields[3]||'') + ' a ' + formatDateDisplay(fields[4]||'');
+    }
+    if (fields[0] === 'C100') {
+      const dtDoc = fields[9] || '';
+      const dtES = fields[10] || '';
+      records.push({ lineIndex: i, rawLine: line, registro: 'C100', numDoc: fields[7]||'', chvNfe: fields[8]||'', dtDoc, dtES, codPart: fields[3]||'', status: getStatus(dtDoc, dtES) });
+    }
+  }
+  return { name, lines, records, periodo };
+}
+
+function rebuildFile(file) {
+  const newLines = [...file.lines];
+  for (const record of file.records) {
+    const fields = newLines[record.lineIndex].split('|');
+    fields[10] = record.dtDoc;
+    fields[11] = record.dtES;
+    newLines[record.lineIndex] = fields.join('|');
+  }
+  return newLines.join('\n');
+}
+
+// ============= ACTIONS =============
+function clearAll() {
+  files = []; selected = new Set(); currentPages = {}; filter = 'all'; editingCell = null;
+  render();
+}
+
+function handleFiles(fileList) {
+  const promises = Array.from(fileList).map(f => f.text().then(content => ({ name: f.name, content })));
+  Promise.all(promises).then(loaded => {
+    loaded.forEach(f => files.push(parseEfdFile(f.name, f.content)));
+    render();
+  });
+}
+
+function updateRecord(fileIdx, recordIdx, field, value) {
+  const r = files[fileIdx].records[recordIdx];
+  r[field] = value;
+  r.status = getStatus(r.dtDoc, r.dtES);
+  render();
+}
+
+function downloadFile(fileIdx) {
+  const file = files[fileIdx];
+  const content = rebuildFile(file);
+  const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href = url; a.download = 'corrigido_' + file.name; a.click();
+  URL.revokeObjectURL(url);
+}
+
+function downloadAll() { files.forEach((_, i) => downloadFile(i)); }
+
+function toggleSelect(key) { selected.has(key) ? selected.delete(key) : selected.add(key); render(); }
+function toggleSelectAll(fileIdx, keys) {
+  const allSel = keys.every(k => selected.has(k));
+  keys.forEach(k => allSel ? selected.delete(k) : selected.add(k));
+  render();
+}
+function selectAllErrors() {
+  files.forEach((f, fi) => f.records.forEach((r, ri) => { if (r.status === 'error') selected.add(fi+'-'+ri); }));
+  render();
+}
+function clearSelection() { selected = new Set(); render(); }
+
+function setFilter(f) { filter = f; currentPages = {}; render(); }
+function getPage(fi) { return currentPages[fi] || 0; }
+function setPage(fi, p) { currentPages[fi] = p; render(); }
+
+function startEdit(key, val) { editingCell = key; render(); setTimeout(() => { const el = document.getElementById('edit-'+key); if (el) { el.value = formatDateDisplay(val); el.focus(); } }, 0); }
+function saveEdit(fileIdx, recordIdx, field) {
+  const el = document.getElementById('edit-'+editingCell);
+  if (el) { const clean = el.value.replace(/\D/g,''); if (clean.length === 8) updateRecord(fileIdx, recordIdx, field, clean); }
+  editingCell = null; render();
+}
+
+function openModal() { batchMode = 'set-es-to-doc'; document.getElementById('modalOverlay').style.display = 'flex'; renderModalOptions(); }
+function closeModal() { document.getElementById('modalOverlay').style.display = 'none'; }
+function setBatchMode(m) { batchMode = m; renderModalOptions(); }
+function renderModalOptions() {
+  const opts = [
+    { value: 'set-es-to-doc', label: 'Igualar Dt. E/S à Dt. Emissão', desc: 'A data de entrada/saída será igual à data de emissão' },
+    { value: 'set-doc-to-es', label: 'Igualar Dt. Emissão à Dt. E/S', desc: 'A data de emissão será igual à data de entrada/saída' },
+    { value: 'set-es-custom', label: 'Definir Dt. E/S personalizada', desc: 'Informe uma data específica para a entrada/saída' },
+    { value: 'set-doc-custom', label: 'Definir Dt. Emissão personalizada', desc: 'Informe uma data específica para a emissão' },
+  ];
+  document.getElementById('modalOptions').innerHTML = opts.map(o => `
+    <label class="radio-option ${batchMode===o.value?'active':''}" onclick="setBatchMode('${o.value}')">
+      <input type="radio" name="bm" value="${o.value}" ${batchMode===o.value?'checked':''}>
+      <div><div class="radio-label">${o.label}</div><div class="radio-desc">${o.desc}</div></div>
+    </label>`).join('');
+  document.getElementById('customDateWrap').style.display = (batchMode==='set-es-custom'||batchMode==='set-doc-custom') ? 'block' : 'none';
+}
+function applyBatch() {
+  const hasSelection = selected.size > 0;
+  const customVal = document.getElementById('customDateInput').value.replace(/\D/g,'');
+  const needsCustom = batchMode==='set-es-custom'||batchMode==='set-doc-custom';
+  if (needsCustom && customVal.length !== 8) return;
+  files.forEach((file, fi) => {
+    file.records.forEach((r, ri) => {
+      const key = fi+'-'+ri;
+      const shouldApply = hasSelection ? selected.has(key) : r.status === 'error';
+      if (!shouldApply) return;
+      if (batchMode === 'set-es-to-doc') r.dtES = r.dtDoc;
+      else if (batchMode === 'set-doc-to-es') r.dtDoc = r.dtES;
+      else if (batchMode === 'set-es-custom') r.dtES = customVal;
+      else if (batchMode === 'set-doc-custom') r.dtDoc = customVal;
+      r.status = getStatus(r.dtDoc, r.dtES);
+    });
+  });
+  closeModal(); selected = new Set(); render();
+}
+
+// ============= SVG ICONS =============
+const IC = {
+  upload: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></svg>',
+  check: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/></svg>',
+  alert: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/></svg>',
+  download: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>',
+  pencil: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/></svg>',
+  filter: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>',
+  chevL: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>',
+  chevR: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>',
+};
+
+// ============= RENDER =============
+function render() {
+  const app = document.getElementById('app');
+  document.getElementById('btnClear').style.display = files.length > 0 ? 'block' : 'none';
+
+  if (files.length === 0) {
+    app.innerHTML = `
+      <div class="intro" style="margin-top:2rem">
+        <h2>Valide as datas dos seus arquivos EFD</h2>
+        <p>Carregue seus arquivos EFD ICMS/IPI para verificar e corrigir as datas de emissão e entrada/saída dos documentos fiscais.</p>
+      </div>
+      <div style="max-width:36rem;margin:1.5rem auto 0">
+        <label class="dropzone" ondragover="event.preventDefault()" ondrop="event.preventDefault();handleFiles(event.dataTransfer.files)">
+          <div class="dropzone-icon">${IC.upload}</div>
+          <div class="dropzone-text"><p>Arraste arquivos EFD aqui</p><p>ou clique para selecionar • Suporta múltiplos arquivos (.txt)</p></div>
+          <input type="file" multiple accept=".txt" onchange="handleFiles(this.files)">
+        </label>
+      </div>
+      <div class="steps" style="max-width:36rem;margin:1.5rem auto 0">
+        <div class="step"><div class="step-title">1. Carregar</div><div class="step-desc">Arraste seus arquivos .txt</div></div>
+        <div class="step"><div class="step-title">2. Verificar</div><div class="step-desc">Veja erros de datas</div></div>
+        <div class="step"><div class="step-title">3. Corrigir</div><div class="step-desc">Edite e baixe</div></div>
+      </div>`;
+    return;
+  }
+
+  // Compute stats
+  let total=0, ok=0, errors=0;
+  files.forEach(f => f.records.forEach(r => { total++; r.status==='ok'?ok++:errors++; }));
+
+  let html = `
+    <label class="dropzone" style="padding:1.5rem" ondragover="event.preventDefault()" ondrop="event.preventDefault();handleFiles(event.dataTransfer.files)">
+      <div style="display:flex;align-items:center;gap:0.75rem">
+        <div class="dropzone-icon" style="padding:0.5rem">${IC.upload}</div>
+        <div class="dropzone-text" style="text-align:left"><p style="font-size:0.875rem">Arraste mais arquivos EFD aqui</p><p>ou clique para selecionar</p></div>
+      </div>
+      <input type="file" multiple accept=".txt" onchange="handleFiles(this.files)">
+    </label>
+    <div class="stats">
+      <div class="stat"><div class="stat-value">${total}</div><div class="stat-label">Total de registros</div></div>
+      <div class="stat stat-ok"><div class="stat-value">${ok}</div><div class="stat-label">Datas corretas</div></div>
+      <div class="stat stat-error"><div class="stat-value">${errors}</div><div class="stat-label">Datas com erro</div></div>
+    </div>
+    <div class="actions">
+      <div class="actions-left">
+        <span style="color:var(--muted-fg)">${IC.filter}</span>
+        <div class="filter-group">
+          <button class="filter-btn ${filter==='all'?'active':''}" onclick="setFilter('all')">Todos</button>
+          <button class="filter-btn ${filter==='ok'?'active':''}" onclick="setFilter('ok')">OK</button>
+          <button class="filter-btn ${filter==='error'?'active':''}" onclick="setFilter('error')">Erros</button>
+        </div>
+      </div>
+      <div class="actions-right">
+        ${selected.size>0?`<span class="sel-count">${selected.size} selecionado(s)</span>`:''}
+        <button class="btn" onclick="selectAllErrors()">Selecionar Erros</button>
+        ${selected.size>0?`<button class="btn" onclick="clearSelection()">Limpar Seleção</button>`:''}
+        <button class="btn" onclick="openModal()">${IC.pencil} Edição em Lote</button>
+        <button class="btn btn-primary" onclick="downloadAll()">${IC.download} Baixar Todos</button>
+      </div>
+    </div>`;
+
+  files.forEach((file, fi) => {
+    const filtered = file.records.map((r,i)=>({...r,actualIdx:i})).filter(r=> filter==='all'||r.status===filter);
+    if (filtered.length===0 && filter!=='all') return;
+    const page = getPage(fi);
+    const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
+    const paged = filtered.slice(page*PAGE_SIZE, (page+1)*PAGE_SIZE);
+    const pageKeys = paged.map(r=>fi+'-'+r.actualIdx);
+    const allPageSel = paged.length>0 && pageKeys.every(k=>selected.has(k));
+
+    html += `<div class="file-block">
+      <div class="file-header">
+        <div><div class="file-name">${file.name}</div><div class="file-periodo">Período: ${file.periodo} • ${filtered.length} registro(s)</div></div>
+        <button class="btn" onclick="downloadFile(${fi})">${IC.download} Baixar</button>
+      </div>
+      <div class="table-wrap"><table>
+        <thead><tr>
+          <th><input type="checkbox" class="chk" ${allPageSel?'checked':''} onchange="toggleSelectAll(${fi},[${pageKeys.map(k=>`'${k}'`).join(',')}])"></th>
+          <th>Status</th><th>Nº Doc</th><th>Dt. Emissão</th><th>Dt. Entrada/Saída</th><th>Cód. Participante</th>
+        </tr></thead><tbody>`;
+
+    paged.forEach(r => {
+      const key = fi+'-'+r.actualIdx;
+      const dtDocKey = key+'-dtDoc';
+      const dtESKey = key+'-dtES';
+      const isSel = selected.has(key);
+
+      html += `<tr class="${isSel?'selected':''}">
+        <td><input type="checkbox" class="chk" ${isSel?'checked':''} onchange="toggleSelect('${key}')"></td>
+        <td>${r.status==='ok'?`<span class="badge badge-ok">${IC.check} OK</span>`:`<span class="badge badge-error">${IC.alert} Erro</span>`}</td>
+        <td class="mono" style="font-size:0.75rem">${r.numDoc}</td>
+        <td>${editingCell===dtDocKey
+          ?`<input class="edit-input" id="edit-${dtDocKey}" onblur="saveEdit(${fi},${r.actualIdx},'dtDoc')" onkeydown="if(event.key==='Enter')saveEdit(${fi},${r.actualIdx},'dtDoc')">`
+          :`<button class="editable" onclick="startEdit('${dtDocKey}','${r.dtDoc}')">${formatDateDisplay(r.dtDoc)}</button>`}</td>
+        <td>${editingCell===dtESKey
+          ?`<input class="edit-input" id="edit-${dtESKey}" onblur="saveEdit(${fi},${r.actualIdx},'dtES')" onkeydown="if(event.key==='Enter')saveEdit(${fi},${r.actualIdx},'dtES')">`
+          :`<button class="editable" onclick="startEdit('${dtESKey}','${r.dtES}')">${formatDateDisplay(r.dtES)}</button>`}</td>
+        <td class="mono truncate" style="font-size:0.75rem">${r.codPart}</td>
+      </tr>`;
+    });
+
+    html += `</tbody></table></div>`;
+
+    if (totalPages > 1) {
+      html += `<div class="pagination"><div class="pagination-info">Página ${page+1} de ${totalPages}</div><div class="pagination-btns">`;
+      html += `<button class="page-btn" ${page===0?'disabled':''} onclick="setPage(${fi},${page-1})">${IC.chevL}</button>`;
+      const maxBtns = Math.min(totalPages, 7);
+      for (let i = 0; i < maxBtns; i++) {
+        let pn;
+        if (totalPages<=7) pn=i;
+        else if (page<3) pn=i;
+        else if (page>totalPages-4) pn=totalPages-7+i;
+        else pn=page-3+i;
+        html += `<button class="page-btn ${page===pn?'active':''}" onclick="setPage(${fi},${pn})">${pn+1}</button>`;
+      }
+      html += `<button class="page-btn" ${page===totalPages-1?'disabled':''} onclick="setPage(${fi},${page+1})">${IC.chevR}</button>`;
+      html += `</div></div>`;
+    }
+    html += `</div>`;
+  });
+
+  app.innerHTML = html;
+}
+
+// Init
+render();
+</script>
+</body>
+</html>
