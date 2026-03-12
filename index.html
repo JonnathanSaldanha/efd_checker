@@ -62,7 +62,10 @@ header { border-bottom: 1px solid var(--border); background: var(--card); }
 .btn svg { width: 16px; height: 16px; }
 
 /* Stats */
-.stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; }
+.stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; }
+.stat-blank { background: hsla(220,15%,94%,0.5); border-color: var(--muted-fg); }
+.stat-blank .stat-value { color: var(--muted-fg); }
+.stat-blank .stat-label { color: var(--muted-fg); }
 .stat { border: 1px solid var(--border); background: var(--card); border-radius: var(--radius); padding: 1rem; text-align: center; }
 .stat-value { font-size: 1.5rem; font-weight: 700; font-family: 'JetBrains Mono', monospace; }
 .stat-label { font-size: 0.875rem; color: var(--muted-fg); }
@@ -203,6 +206,7 @@ let editingCell = null;
 let selected = new Set();
 let currentPages = {};
 let batchMode = 'set-es-to-doc';
+let blankExpanded = {};
 const PAGE_SIZE = 50;
 
 // ============= PARSER =============
@@ -227,6 +231,7 @@ function getStatus(dtDoc, dtES) {
 function parseEfdFile(name, content) {
   const lines = content.split(/\r?\n/);
   const records = [];
+  const blankRecords = [];
   let periodo = '';
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
@@ -237,11 +242,14 @@ function parseEfdFile(name, content) {
     if (fields[0] === 'C100') {
       const dtDoc = fields[9] || '';
       const dtES = fields[10] || '';
-      if (!dtDoc || !dtES) continue;
+      if (!dtDoc || !dtES) {
+        blankRecords.push({ lineIndex: i, rawLine: line, registro: 'C100', numDoc: fields[7]||'', chvNfe: fields[8]||'', dtDoc, dtES, codPart: fields[3]||'' });
+        continue;
+      }
       records.push({ lineIndex: i, rawLine: line, registro: 'C100', numDoc: fields[7]||'', chvNfe: fields[8]||'', dtDoc, dtES, codPart: fields[3]||'', status: getStatus(dtDoc, dtES) });
     }
   }
-  return { name, lines, records, periodo };
+  return { name, lines, records, blankRecords, periodo };
 }
 
 function rebuildFile(file) {
@@ -257,7 +265,7 @@ function rebuildFile(file) {
 
 // ============= ACTIONS =============
 function clearAll() {
-  files = []; selected = new Set(); currentPages = {}; filter = 'all'; editingCell = null;
+  files = []; selected = new Set(); currentPages = {}; blankExpanded = {}; filter = 'all'; editingCell = null;
   render();
 }
 
@@ -302,6 +310,7 @@ function clearSelection() { selected = new Set(); render(); }
 function setFilter(f) { filter = f; currentPages = {}; render(); }
 function getPage(fi) { return currentPages[fi] || 0; }
 function setPage(fi, p) { currentPages[fi] = p; render(); }
+function toggleBlank(fi) { blankExpanded[fi] = !blankExpanded[fi]; render(); }
 
 function startEdit(key, val) { editingCell = key; render(); setTimeout(() => { const el = document.getElementById('edit-'+key); if (el) { el.value = formatDateDisplay(val); el.focus(); } }, 0); }
 function saveEdit(fileIdx, recordIdx, field) {
@@ -386,8 +395,8 @@ function render() {
   }
 
   // Compute stats
-  let total=0, ok=0, errors=0;
-  files.forEach(f => f.records.forEach(r => { total++; r.status==='ok'?ok++:errors++; }));
+  let total=0, ok=0, errors=0, blanks=0;
+  files.forEach(f => { f.records.forEach(r => { total++; r.status==='ok'?ok++:errors++; }); blanks += (f.blankRecords||[]).length; total += (f.blankRecords||[]).length; });
 
   let html = `
     <label class="dropzone" style="padding:1.5rem" ondragover="event.preventDefault()" ondrop="event.preventDefault();handleFiles(event.dataTransfer.files)">
@@ -401,6 +410,7 @@ function render() {
       <div class="stat"><div class="stat-value">${total}</div><div class="stat-label">Total de registros</div></div>
       <div class="stat stat-ok"><div class="stat-value">${ok}</div><div class="stat-label">Datas corretas</div></div>
       <div class="stat stat-error"><div class="stat-value">${errors}</div><div class="stat-label">Datas com erro</div></div>
+      <div class="stat stat-blank"><div class="stat-value">${blanks}</div><div class="stat-label">Em branco</div></div>
     </div>
     <div class="actions">
       <div class="actions-left">
@@ -409,6 +419,7 @@ function render() {
           <button class="filter-btn ${filter==='all'?'active':''}" onclick="setFilter('all')">Todos</button>
           <button class="filter-btn ${filter==='ok'?'active':''}" onclick="setFilter('ok')">OK</button>
           <button class="filter-btn ${filter==='error'?'active':''}" onclick="setFilter('error')">Erros</button>
+          <button class="filter-btn ${filter==='blank'?'active':''}" onclick="setFilter('blank')">Em branco</button>
         </div>
       </div>
       <div class="actions-right">
@@ -421,13 +432,18 @@ function render() {
     </div>`;
 
   files.forEach((file, fi) => {
-    const filtered = file.records.map((r,i)=>({...r,actualIdx:i})).filter(r=> filter==='all'||r.status===filter);
+    // Build unified rows
+    const rows = [];
+    file.records.forEach((r,i) => rows.push({...r, actualIdx:i, type:'record', displayStatus:r.status}));
+    (file.blankRecords||[]).forEach((r,i) => rows.push({...r, actualIdx:i, type:'blank', displayStatus:'blank'}));
+    
+    const filtered = rows.filter(r => filter==='all' || r.displayStatus===filter);
     if (filtered.length===0 && filter!=='all') return;
     const page = getPage(fi);
     const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
     const paged = filtered.slice(page*PAGE_SIZE, (page+1)*PAGE_SIZE);
-    const pageKeys = paged.map(r=>fi+'-'+r.actualIdx);
-    const allPageSel = paged.length>0 && pageKeys.every(k=>selected.has(k));
+    const selectableKeys = paged.filter(r=>r.type==='record').map(r=>fi+'-'+r.actualIdx);
+    const allPageSel = selectableKeys.length>0 && selectableKeys.every(k=>selected.has(k));
 
     html += `<div class="file-block">
       <div class="file-header">
@@ -436,26 +452,40 @@ function render() {
       </div>
       <div class="table-wrap"><table>
         <thead><tr>
-          <th><input type="checkbox" class="chk" ${allPageSel?'checked':''} onchange="toggleSelectAll(${fi},[${pageKeys.map(k=>`'${k}'`).join(',')}])"></th>
+          <th><input type="checkbox" class="chk" ${allPageSel?'checked':''} onchange="toggleSelectAll(${fi},[${selectableKeys.map(k=>`'${k}'`).join(',')}])"></th>
           <th>Status</th><th>Nº Doc</th><th>Dt. Emissão</th><th>Dt. Entrada/Saída</th><th>Cód. Participante</th>
         </tr></thead><tbody>`;
 
     paged.forEach(r => {
+      const isBlank = r.type === 'blank';
       const key = fi+'-'+r.actualIdx;
-      const dtDocKey = key+'-dtDoc';
-      const dtESKey = key+'-dtES';
-      const isSel = selected.has(key);
+      const dtDocKey = key+'-'+r.type+'-dtDoc';
+      const dtESKey = key+'-'+r.type+'-dtES';
+      const isSel = !isBlank && selected.has(key);
+
+      let statusBadge;
+      if (r.displayStatus === 'ok') statusBadge = `<span class="badge badge-ok">${IC.check} OK</span>`;
+      else if (r.displayStatus === 'error') statusBadge = `<span class="badge badge-error">${IC.alert} Erro</span>`;
+      else statusBadge = `<span class="badge" style="background:var(--muted);color:var(--muted-fg);border-color:var(--border)">${IC.alert} Em branco</span>`;
+
+      const dtDocCell = isBlank
+        ? `<span class="mono" style="font-size:0.75rem;color:var(--muted-fg)">${r.dtDoc ? formatDateDisplay(r.dtDoc) : '—'}</span>`
+        : (editingCell===dtDocKey
+          ? `<input class="edit-input" id="edit-${dtDocKey}" onblur="saveEdit(${fi},${r.actualIdx},'dtDoc')" onkeydown="if(event.key==='Enter')saveEdit(${fi},${r.actualIdx},'dtDoc')">`
+          : `<button class="editable" onclick="startEdit('${dtDocKey}','${r.dtDoc}')">${formatDateDisplay(r.dtDoc)}</button>`);
+
+      const dtESCell = isBlank
+        ? `<span class="mono" style="font-size:0.75rem;color:var(--muted-fg)">${r.dtES ? formatDateDisplay(r.dtES) : '—'}</span>`
+        : (editingCell===dtESKey
+          ? `<input class="edit-input" id="edit-${dtESKey}" onblur="saveEdit(${fi},${r.actualIdx},'dtES')" onkeydown="if(event.key==='Enter')saveEdit(${fi},${r.actualIdx},'dtES')">`
+          : `<button class="editable" onclick="startEdit('${dtESKey}','${r.dtES}')">${formatDateDisplay(r.dtES)}</button>`);
 
       html += `<tr class="${isSel?'selected':''}">
-        <td><input type="checkbox" class="chk" ${isSel?'checked':''} onchange="toggleSelect('${key}')"></td>
-        <td>${r.status==='ok'?`<span class="badge badge-ok">${IC.check} OK</span>`:`<span class="badge badge-error">${IC.alert} Erro</span>`}</td>
+        <td>${isBlank ? '' : `<input type="checkbox" class="chk" ${isSel?'checked':''} onchange="toggleSelect('${key}')">`}</td>
+        <td>${statusBadge}</td>
         <td class="mono" style="font-size:0.75rem">${r.numDoc}</td>
-        <td>${editingCell===dtDocKey
-          ?`<input class="edit-input" id="edit-${dtDocKey}" onblur="saveEdit(${fi},${r.actualIdx},'dtDoc')" onkeydown="if(event.key==='Enter')saveEdit(${fi},${r.actualIdx},'dtDoc')">`
-          :`<button class="editable" onclick="startEdit('${dtDocKey}','${r.dtDoc}')">${formatDateDisplay(r.dtDoc)}</button>`}</td>
-        <td>${editingCell===dtESKey
-          ?`<input class="edit-input" id="edit-${dtESKey}" onblur="saveEdit(${fi},${r.actualIdx},'dtES')" onkeydown="if(event.key==='Enter')saveEdit(${fi},${r.actualIdx},'dtES')">`
-          :`<button class="editable" onclick="startEdit('${dtESKey}','${r.dtES}')">${formatDateDisplay(r.dtES)}</button>`}</td>
+        <td>${dtDocCell}</td>
+        <td>${dtESCell}</td>
         <td class="mono truncate" style="font-size:0.75rem">${r.codPart}</td>
       </tr>`;
     });
