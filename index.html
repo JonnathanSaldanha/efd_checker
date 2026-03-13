@@ -62,10 +62,13 @@ header { border-bottom: 1px solid var(--border); background: var(--card); }
 .btn svg { width: 16px; height: 16px; }
 
 /* Stats */
-.stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; }
+.stats { display: grid; grid-template-columns: repeat(5, 1fr); gap: 1rem; }
 .stat-blank { background: hsla(220,15%,94%,0.5); border-color: var(--muted-fg); }
 .stat-blank .stat-value { color: var(--muted-fg); }
 .stat-blank .stat-label { color: var(--muted-fg); }
+.stat-extemp { background: hsla(35,90%,50%,0.1); border-color: hsla(35,90%,50%,0.3); }
+.stat-extemp .stat-value { color: hsl(35,90%,40%); }
+.stat-extemp .stat-label { color: hsl(35,90%,40%); }
 .stat { border: 1px solid var(--border); background: var(--card); border-radius: var(--radius); padding: 1rem; text-align: center; }
 .stat-value { font-size: 1.5rem; font-weight: 700; font-family: 'JetBrains Mono', monospace; }
 .stat-label { font-size: 0.875rem; color: var(--muted-fg); }
@@ -103,6 +106,7 @@ tr.selected { background: hsla(220,70%,45%,0.05); }
 .badge { display: inline-flex; align-items: center; gap: 0.25rem; padding: 0.125rem 0.5rem; border-radius: 9999px; font-size: 0.75rem; font-weight: 500; border: 1px solid; }
 .badge-ok { background: hsla(142,72%,35%,0.1); color: var(--success); border-color: hsla(142,72%,35%,0.3); }
 .badge-error { background: hsla(0,72%,51%,0.1); color: var(--destructive); border-color: hsla(0,72%,51%,0.3); }
+.badge-extemp { background: hsla(35,90%,50%,0.1); color: hsl(35,90%,40%); border-color: hsla(35,90%,50%,0.3); }
 .badge svg { width: 12px; height: 12px; }
 
 /* Editable cell */
@@ -220,7 +224,14 @@ function parseDateToComparable(dt) {
   return parseInt(dt.slice(4,8) + dt.slice(2,4) + dt.slice(0,2));
 }
 
-function getStatus(dtDoc, dtES) {
+function getStatus(dtDoc, dtES, codSit, dtIni, dtFim) {
+  const EXTEMP_CODES = ['01', '07'];
+  if (EXTEMP_CODES.includes(codSit) && dtDoc && dtIni && dtFim) {
+    const doc = parseDateToComparable(dtDoc);
+    const ini = parseDateToComparable(dtIni);
+    const fim = parseDateToComparable(dtFim);
+    if (doc >= ini && doc <= fim) return 'extemp';
+  }
   if (!dtDoc || !dtES) return 'ok';
   const emissao = parseDateToComparable(dtDoc);
   const entradaSaida = parseDateToComparable(dtES);
@@ -233,23 +244,31 @@ function parseEfdFile(name, content) {
   const records = [];
   const blankRecords = [];
   let periodo = '';
+  let dtIni = '', dtFim = '';
+  // First pass: get period
+  for (let i = 0; i < lines.length; i++) {
+    const fields = lines[i].split('|').filter((_, idx) => idx > 0);
+    if (fields[0] === '0000') {
+      dtIni = fields[3]||''; dtFim = fields[4]||'';
+      periodo = formatDateDisplay(dtIni) + ' a ' + formatDateDisplay(dtFim);
+      break;
+    }
+  }
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     const fields = line.split('|').filter((_, idx) => idx > 0);
-    if (fields[0] === '0000') {
-      periodo = formatDateDisplay(fields[3]||'') + ' a ' + formatDateDisplay(fields[4]||'');
-    }
     if (fields[0] === 'C100') {
+      const codSit = fields[5] || '';
       const dtDoc = fields[9] || '';
       const dtES = fields[10] || '';
       if (!dtDoc || !dtES) {
-        blankRecords.push({ lineIndex: i, rawLine: line, registro: 'C100', numDoc: fields[7]||'', chvNfe: fields[8]||'', dtDoc, dtES, codPart: fields[3]||'' });
+        blankRecords.push({ lineIndex: i, rawLine: line, registro: 'C100', numDoc: fields[7]||'', chvNfe: fields[8]||'', dtDoc, dtES, codPart: fields[3]||'', codSit });
         continue;
       }
-      records.push({ lineIndex: i, rawLine: line, registro: 'C100', numDoc: fields[7]||'', chvNfe: fields[8]||'', dtDoc, dtES, codPart: fields[3]||'', status: getStatus(dtDoc, dtES) });
+      records.push({ lineIndex: i, rawLine: line, registro: 'C100', numDoc: fields[7]||'', chvNfe: fields[8]||'', dtDoc, dtES, codPart: fields[3]||'', codSit, status: getStatus(dtDoc, dtES, codSit, dtIni, dtFim) });
     }
   }
-  return { name, lines, records, blankRecords, periodo };
+  return { name, lines, records, blankRecords, periodo, dtIni, dtFim };
 }
 
 function rebuildFile(file) {
@@ -280,7 +299,8 @@ function handleFiles(fileList) {
 function updateRecord(fileIdx, recordIdx, field, value) {
   const r = files[fileIdx].records[recordIdx];
   r[field] = value;
-  r.status = getStatus(r.dtDoc, r.dtES);
+  const file = files[fileIdx];
+  r.status = getStatus(r.dtDoc, r.dtES, r.codSit, file.dtIni, file.dtFim);
   render();
 }
 
@@ -350,7 +370,7 @@ function applyBatch() {
       else if (batchMode === 'set-doc-to-es') r.dtDoc = r.dtES;
       else if (batchMode === 'set-es-custom') r.dtES = customVal;
       else if (batchMode === 'set-doc-custom') r.dtDoc = customVal;
-      r.status = getStatus(r.dtDoc, r.dtES);
+      r.status = getStatus(r.dtDoc, r.dtES, r.codSit, file.dtIni, file.dtFim);
     });
   });
   closeModal(); selected = new Set(); render();
@@ -395,8 +415,8 @@ function render() {
   }
 
   // Compute stats
-  let total=0, ok=0, errors=0, blanks=0;
-  files.forEach(f => { f.records.forEach(r => { total++; r.status==='ok'?ok++:errors++; }); blanks += (f.blankRecords||[]).length; total += (f.blankRecords||[]).length; });
+  let total=0, ok=0, errors=0, blanks=0, extemps=0;
+  files.forEach(f => { f.records.forEach(r => { total++; if(r.status==='ok') ok++; else if(r.status==='extemp') extemps++; else errors++; }); blanks += (f.blankRecords||[]).length; total += (f.blankRecords||[]).length; });
 
   let html = `
     <label class="dropzone" style="padding:1.5rem" ondragover="event.preventDefault()" ondrop="event.preventDefault();handleFiles(event.dataTransfer.files)">
@@ -410,6 +430,7 @@ function render() {
       <div class="stat"><div class="stat-value">${total}</div><div class="stat-label">Total de registros</div></div>
       <div class="stat stat-ok"><div class="stat-value">${ok}</div><div class="stat-label">Datas corretas</div></div>
       <div class="stat stat-error"><div class="stat-value">${errors}</div><div class="stat-label">Datas com erro</div></div>
+      <div class="stat stat-extemp"><div class="stat-value">${extemps}</div><div class="stat-label">Extemporâneo</div></div>
       <div class="stat stat-blank"><div class="stat-value">${blanks}</div><div class="stat-label">Em branco</div></div>
     </div>
     <div class="actions">
@@ -419,6 +440,7 @@ function render() {
           <button class="filter-btn ${filter==='all'?'active':''}" onclick="setFilter('all')">Todos</button>
           <button class="filter-btn ${filter==='ok'?'active':''}" onclick="setFilter('ok')">OK</button>
           <button class="filter-btn ${filter==='error'?'active':''}" onclick="setFilter('error')">Erros</button>
+          <button class="filter-btn ${filter==='extemp'?'active':''}" onclick="setFilter('extemp')">Extemp.</button>
           <button class="filter-btn ${filter==='blank'?'active':''}" onclick="setFilter('blank')">Em branco</button>
         </div>
       </div>
@@ -453,7 +475,7 @@ function render() {
       <div class="table-wrap"><table>
         <thead><tr>
           <th><input type="checkbox" class="chk" ${allPageSel?'checked':''} onchange="toggleSelectAll(${fi},[${selectableKeys.map(k=>`'${k}'`).join(',')}])"></th>
-          <th>Status</th><th>Nº Doc</th><th>Dt. Emissão</th><th>Dt. Entrada/Saída</th><th>Cód. Participante</th>
+          <th>Status</th><th>Nº Doc</th><th>Dt. Emissão</th><th>Dt. Entrada/Saída</th><th>COD_SIT</th><th>Cód. Participante</th>
         </tr></thead><tbody>`;
 
     paged.forEach(r => {
@@ -466,6 +488,7 @@ function render() {
       let statusBadge;
       if (r.displayStatus === 'ok') statusBadge = `<span class="badge badge-ok">${IC.check} OK</span>`;
       else if (r.displayStatus === 'error') statusBadge = `<span class="badge badge-error">${IC.alert} Erro</span>`;
+      else if (r.displayStatus === 'extemp') statusBadge = `<span class="badge badge-extemp">${IC.alert} Extemp.</span>`;
       else statusBadge = `<span class="badge" style="background:var(--muted);color:var(--muted-fg);border-color:var(--border)">${IC.alert} Em branco</span>`;
 
       const dtDocCell = isBlank
@@ -486,6 +509,7 @@ function render() {
         <td class="mono" style="font-size:0.75rem">${r.numDoc}</td>
         <td>${dtDocCell}</td>
         <td>${dtESCell}</td>
+        <td class="mono" style="font-size:0.75rem">${r.codSit||''}</td>
         <td class="mono truncate" style="font-size:0.75rem">${r.codPart}</td>
       </tr>`;
     });
