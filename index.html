@@ -512,7 +512,7 @@ function render() {
       <div class="table-wrap"><table>
         <thead><tr>
           <th><input type="checkbox" class="chk" ${allPageSel?'checked':''} onchange="toggleSelectAll(${fi},[${selectableKeys.map(k=>`'${k}'`).join(',')}])"></th>
-          <th>Status</th><th>Nº Doc</th><th>Dt. Emissão</th><th>Dt. Entrada/Saída</th><th>COD_SIT</th><th>Cód. Participante</th>
+          <th>Status</th><th>Nº Doc</th><th>Dt. Emissão</th><th>Dt. Entrada/Saída</th><th>COD_SIT</th><th>Chave NF-e</th>
         </tr></thead><tbody>`;
 
     paged.forEach(r => {
@@ -555,7 +555,7 @@ function render() {
         <td>${dtDocCell}</td>
         <td>${dtESCell}</td>
         <td>${codSitCell}</td>
-        <td class="mono truncate" style="font-size:0.75rem">${r.codPart}</td>
+        <td class="mono truncate" style="font-size:0.75rem;max-width:300px" title="${r.chvNfe||''}">${r.chvNfe||'—'}</td>
       </tr>`;
     });
 
