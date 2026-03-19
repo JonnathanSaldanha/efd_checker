@@ -159,6 +159,29 @@ main { padding: 2rem 0; }
 .intro h2 { font-size: 1.5rem; font-weight: 700; }
 .intro p { color: var(--muted-fg); margin-top: 0.5rem; }
 .truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 200px; }
+
+/* Excel Column Filter */
+.col-filter-btn { display: inline-flex; align-items: center; gap: 4px; background: none; border: none; cursor: pointer; font-weight: 500; color: var(--muted-fg); font-size: 0.875rem; padding: 0; transition: color 0.15s; width: 100%; text-align: left; }
+.col-filter-btn:hover { color: var(--fg); }
+.col-filter-btn .filter-icon { width: 12px; height: 12px; opacity: 0; transition: opacity 0.15s; flex-shrink: 0; }
+.col-filter-btn:hover .filter-icon { opacity: 0.5; }
+.col-filter-btn.filtered .filter-icon { opacity: 1; color: var(--primary); }
+.col-filter-popup { position: absolute; z-index: 100; background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: 0 4px 16px rgba(0,0,0,0.12); width: 220px; margin-top: 4px; }
+.col-filter-search { padding: 8px; border-bottom: 1px solid var(--border); }
+.col-filter-search input { width: 100%; height: 28px; padding: 0 8px 0 28px; border: 1px solid var(--border); border-radius: 4px; font-size: 0.75rem; outline: none; background: var(--bg); }
+.col-filter-search input:focus { border-color: var(--primary); }
+.col-filter-search { position: relative; }
+.col-filter-search svg { position: absolute; left: 16px; top: 50%; transform: translateY(-50%); width: 14px; height: 14px; color: var(--muted-fg); }
+.col-filter-selectall { padding: 4px; border-bottom: 1px solid var(--border); }
+.col-filter-selectall button { display: flex; align-items: center; gap: 8px; width: 100%; padding: 4px 8px; border: none; background: none; cursor: pointer; font-size: 0.75rem; border-radius: 4px; font-weight: 500; }
+.col-filter-selectall button:hover { background: var(--muted); }
+.col-filter-list { max-height: 192px; overflow-y: auto; padding: 4px; }
+.col-filter-item { display: flex; align-items: center; gap: 8px; width: 100%; padding: 3px 8px; border: none; background: none; cursor: pointer; font-size: 0.75rem; border-radius: 4px; font-family: 'JetBrains Mono', monospace; }
+.col-filter-item:hover { background: var(--muted); }
+.col-filter-clear { padding: 8px; border-top: 1px solid var(--border); }
+.col-filter-clear button { display: flex; align-items: center; justify-content: center; gap: 4px; width: 100%; height: 28px; border: none; background: none; cursor: pointer; font-size: 0.75rem; border-radius: 4px; color: var(--muted-fg); }
+.col-filter-clear button:hover { background: var(--muted); color: var(--fg); }
+.col-filter-chk { width: 14px; height: 14px; accent-color: var(--primary); pointer-events: none; }
 </style>
 </head>
 <body>
@@ -223,6 +246,11 @@ let currentPages = {};
 let batchMode = 'set-es-to-doc';
 let blankExpanded = {};
 const PAGE_SIZE = 50;
+
+// Excel-like column filters (empty Set = show all)
+let colFilters = { status: new Set(), numDoc: new Set(), dtDoc: new Set(), dtES: new Set(), codSit: new Set(), chvNfe: new Set() };
+let openFilter = null; // which column filter popup is open
+let filterSearches = { status: '', numDoc: '', dtDoc: '', dtES: '', codSit: '', chvNfe: '' };
 
 // ============= PARSER =============
 function formatDateDisplay(dt) {
@@ -303,8 +331,70 @@ function rebuildFile(file) {
 // ============= ACTIONS =============
 function clearAll() {
   files = []; selected = new Set(); currentPages = {}; blankExpanded = {}; filter = 'all'; editingCell = null;
+  colFilters = { status: new Set(), numDoc: new Set(), dtDoc: new Set(), dtES: new Set(), codSit: new Set(), chvNfe: new Set() };
+  openFilter = null; filterSearches = { status: '', numDoc: '', dtDoc: '', dtES: '', codSit: '', chvNfe: '' };
   render();
 }
+
+// Column filter helpers
+function getStatusLabel(s) { return {ok:'OK',error:'Erro',extemp:'Extemp.','post-period':'Pós-período',blank:'Em branco'}[s]||s; }
+function getColValue(r, col) {
+  if (col==='status') return getStatusLabel(r.displayStatus||r.status||'blank');
+  if (col==='numDoc') return r.numDoc||'(vazio)';
+  if (col==='dtDoc') return r.dtDoc ? formatDateDisplay(r.dtDoc) : '(vazio)';
+  if (col==='dtES') return r.dtES ? formatDateDisplay(r.dtES) : '(vazio)';
+  if (col==='codSit') return r.codSit||'(vazio)';
+  if (col==='chvNfe') return r.chvNfe||'(vazio)';
+  return '';
+}
+function getUniqueColValues(col) {
+  const vals = new Set();
+  files.forEach(f => {
+    f.records.forEach(r => vals.add(getColValue({...r, displayStatus:r.status}, col)));
+    (f.blankRecords||[]).forEach(r => vals.add(getColValue({...r, displayStatus:'blank'}, col)));
+  });
+  return Array.from(vals).sort();
+}
+function toggleColFilter(col, val) {
+  const s = colFilters[col];
+  const unique = getUniqueColValues(col);
+  if (s.size === 0) {
+    // was "all selected", now deselect this one
+    unique.forEach(v => { if (v !== val) s.add(v); });
+  } else if (s.has(val)) {
+    s.delete(val);
+    if (s.size === 0 || s.size === unique.length) { colFilters[col] = new Set(); }
+  } else {
+    s.add(val);
+    if (s.size === unique.length) { colFilters[col] = new Set(); }
+  }
+  currentPages = {};
+  render();
+}
+function selectAllColFilter(col) { colFilters[col] = new Set(); currentPages = {}; render(); }
+function clearColFilter(col) { colFilters[col] = new Set(); openFilter = null; currentPages = {}; render(); }
+function toggleFilterPopup(col, evt) {
+  evt.stopPropagation();
+  openFilter = openFilter === col ? null : col;
+  filterSearches[col] = '';
+  render();
+}
+function updateFilterSearch(col, val) { filterSearches[col] = val; render(); }
+function isColFiltered(col) { return colFilters[col].size > 0; }
+function hasAnyColFilter() { return Object.values(colFilters).some(s => s.size > 0); }
+function clearAllColFilters() { Object.keys(colFilters).forEach(k => colFilters[k] = new Set()); currentPages = {}; render(); }
+function passesColFilters(row) {
+  for (const col of Object.keys(colFilters)) {
+    if (colFilters[col].size > 0 && !colFilters[col].has(getColValue(row, col))) return false;
+  }
+  return true;
+}
+// Close filter popup on outside click
+document.addEventListener('click', function(e) {
+  if (openFilter && !e.target.closest('.col-filter-popup') && !e.target.closest('.col-filter-btn')) {
+    openFilter = null; render();
+  }
+});
 
 function handleFiles(fileList) {
   const promises = Array.from(fileList).map(f => f.text().then(content => ({ name: f.name, content })));
@@ -472,15 +562,7 @@ function render() {
     </div>
     <div class="actions">
       <div class="actions-left">
-        <span style="color:var(--muted-fg)">${IC.filter}</span>
-        <div class="filter-group">
-          <button class="filter-btn ${filter==='all'?'active':''}" onclick="setFilter('all')">Todos</button>
-          <button class="filter-btn ${filter==='ok'?'active':''}" onclick="setFilter('ok')">OK</button>
-          <button class="filter-btn ${filter==='error'?'active':''}" onclick="setFilter('error')">Erros</button>
-          <button class="filter-btn ${filter==='extemp'?'active':''}" onclick="setFilter('extemp')">Extemp.</button>
-          <button class="filter-btn ${filter==='post-period'?'active':''}" onclick="setFilter('post-period')">Pós-período</button>
-          <button class="filter-btn ${filter==='blank'?'active':''}" onclick="setFilter('blank')">Em branco</button>
-        </div>
+        ${hasAnyColFilter()?`<button class="btn" onclick="clearAllColFilters()">Limpar todos os filtros</button>`:''}
       </div>
       <div class="actions-right">
         ${selected.size>0?`<span class="sel-count">${selected.size} selecionado(s)</span>`:''}
@@ -491,13 +573,36 @@ function render() {
       </div>
     </div>`;
 
+  function renderColFilterHeader(col, label) {
+    const filtered = isColFiltered(col);
+    const isOpen = openFilter === col;
+    let popup = '';
+    if (isOpen) {
+      const unique = getUniqueColValues(col);
+      const search = filterSearches[col] || '';
+      const shown = search ? unique.filter(v => v.toLowerCase().includes(search.toLowerCase())) : unique;
+      const allSel = colFilters[col].size === 0;
+      const searchIcon = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>';
+      popup = `<div class="col-filter-popup" onclick="event.stopPropagation()">
+        <div class="col-filter-search">${searchIcon}<input type="text" placeholder="Pesquisar..." value="${search}" oninput="updateFilterSearch('${col}',this.value)"></div>
+        <div class="col-filter-selectall"><button onclick="selectAllColFilter('${col}')"><input type="checkbox" class="col-filter-chk" ${allSel?'checked':''}> <span style="font-weight:500">(Selecionar Tudo)</span></button></div>
+        <div class="col-filter-list">${shown.map(v => {
+          const checked = colFilters[col].size === 0 || colFilters[col].has(v);
+          return `<button class="col-filter-item" onclick="toggleColFilter('${col}','${v.replace(/'/g,"\\'")}')"><input type="checkbox" class="col-filter-chk" ${checked?'checked':''}> <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${v}</span></button>`;
+        }).join('')}${shown.length===0?'<div style="padding:8px;font-size:0.75rem;color:var(--muted-fg)">Nenhum resultado</div>':''}</div>
+        ${filtered?`<div class="col-filter-clear"><button onclick="clearColFilter('${col}')"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="12" height="12"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg> Limpar filtro</button></div>`:''}
+      </div>`;
+    }
+    return `<th style="position:relative"><button class="col-filter-btn ${filtered?'filtered':''}" onclick="toggleFilterPopup('${col}',event)"><span>${label}</span><svg class="filter-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg></button>${popup}</th>`;
+  }
+
   files.forEach((file, fi) => {
     const rows = [];
     file.records.forEach((r,i) => rows.push({...r, actualIdx:i, type:'record', displayStatus:r.status}));
     (file.blankRecords||[]).forEach((r,i) => rows.push({...r, actualIdx:i, type:'blank', displayStatus:'blank'}));
     
-    const filtered = rows.filter(r => filter==='all' || r.displayStatus===filter);
-    if (filtered.length===0 && filter!=='all') return;
+    const filtered = rows.filter(r => passesColFilters(r));
+    if (filtered.length===0 && hasAnyColFilter()) return;
     const page = getPage(fi);
     const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
     const paged = filtered.slice(page*PAGE_SIZE, (page+1)*PAGE_SIZE);
@@ -512,7 +617,12 @@ function render() {
       <div class="table-wrap"><table>
         <thead><tr>
           <th><input type="checkbox" class="chk" ${allPageSel?'checked':''} onchange="toggleSelectAll(${fi},[${selectableKeys.map(k=>`'${k}'`).join(',')}])"></th>
-          <th>Status</th><th>Nº Doc</th><th>Dt. Emissão</th><th>Dt. Entrada/Saída</th><th>COD_SIT</th><th>Chave NF-e</th>
+          ${renderColFilterHeader('status','Status')}
+          ${renderColFilterHeader('numDoc','Nº Doc')}
+          ${renderColFilterHeader('dtDoc','Dt. Emissão')}
+          ${renderColFilterHeader('dtES','Dt. Entrada/Saída')}
+          ${renderColFilterHeader('codSit','COD_SIT')}
+          ${renderColFilterHeader('chvNfe','Chave NF-e')}
         </tr></thead><tbody>`;
 
     paged.forEach(r => {
